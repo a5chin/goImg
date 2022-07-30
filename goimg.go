@@ -1,29 +1,38 @@
-package main
+package goimg
 
 import (
 	"fmt"
 	"image"
-	"image/color"
 	_ "image/jpeg"
 	"image/png"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 type ImgOperator interface {
-	String() string
-	Save()
-	Flip() GoImg
 	Gray() GoImg
+	Flip() GoImg
+	Save()
+	String() string
 }
 
 type GoImg struct {
+	image         image.Image
 	path          string
-	array         [][]color.Color
 	height, width int
 }
 
-func LoadImage(path string) (img GoImg) {
+func (img *GoImg) String() string {
+	s := fmt.Sprintf(
+		"path: %s, size: (%d, %d)", img.path, img.width, img.height,
+	)
+
+	return s
+}
+
+func LoadImage(path string) GoImg {
+	path, _ = filepath.Abs(path)
 	file, _ := os.Open(path)
 	defer file.Close()
 
@@ -35,87 +44,74 @@ func LoadImage(path string) (img GoImg) {
 	size := src.Bounds().Size()
 	width, height := size.X, size.Y
 
-	img = GoImg{
-		array:  make([][]color.Color, height),
+	img := GoImg{
+		image:  src,
 		path:   path,
 		height: height,
 		width:  width,
 	}
 
-	for y := 0; y < height; y++ {
-		row := make([]color.Color, width)
-		for x := 0; x < width; x++ {
-			row[x] = src.At(x, y)
-		}
-		img.array[y] = row
-	}
-
-	return
-}
-
-func (img *GoImg) String() (s string) {
-	s = fmt.Sprintf(
-		`path: %s, size: (%d, %d)`, img.path, img.width, img.height,
-	)
-
-	return
+	return img
 }
 
 func (img *GoImg) Save(path string) {
-	height, width := img.height, img.width
-	rect := image.Rect(0, 0, width, height)
-	dst := image.NewNRGBA(rect)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			dst.Set(x, y, img.array[y][x])
-		}
-	}
-
 	file, err := os.Create(path)
 	if err != nil {
 		log.Println("Cannot create file:", err)
 	}
 	defer file.Close()
 
-	png.Encode(file, dst.SubImage(dst.Rect))
+	png.Encode(file, img.image)
 }
 
-func (img *GoImg) Flip(direction string) (dst GoImg) {
-	height, width := img.height, img.width
-	dst = GoImg{
-		array:  make([][]color.Color, height),
-		path:   img.path,
-		height: height,
-		width:  width,
-	}
+func (img *GoImg) Flip(direction string) GoImg {
+	canvas := image.NewRGBA(image.Rect(0, 0, img.width, img.height))
 
 	if direction == "h" {
-		for y := 0; y < height; y++ {
-			col := make([]color.Color, width)
-			for x := 0; x < width/2; x++ {
-				z := width - x - 1
-				col[x], col[z] = img.array[y][z], img.array[y][x]
+		// holizontal flip
+		for y := 0; y < img.height; y++ {
+			for x1 := 0; x1 < img.width/2; x1++ {
+				x2 := img.width - x1 - 1
+				canvas.Set(x1, y, img.image.At(x2, y))
+				canvas.Set(x2, y, img.image.At(x1, y))
 			}
-			dst.array[y] = col
 		}
 	} else if direction == "v" {
-		for x1 := 0; x1 < height/2; x1++ {
-			x2 := height - x1 - 1
-			dst.array[x1], dst.array[x2] = img.array[x2], img.array[x1]
+		// vertical flip
+		for y1 := 0; y1 < img.height/2; y1++ {
+			for x := 0; x < img.width; x++ {
+				y2 := img.height - y1 - 1
+				canvas.Set(x, y1, img.image.At(x, y2))
+				canvas.Set(x, y2, img.image.At(x, y1))
+			}
 		}
 	}
 
-	return
-}
-
-func (img *GoImg) Gray() (gray GoImg) {
-	height, width := img.height, img.width
-	gray = GoImg{
-		array:  make([][]color.Color, height),
+	dst := GoImg{
+		image:  canvas,
 		path:   img.path,
-		height: height,
-		width:  width,
+		height: img.height,
+		width:  img.width,
 	}
 
-	return
+	return dst
+}
+
+func (img *GoImg) Gray() GoImg {
+	canvas := image.NewGray(image.Rect(0, 0, img.width, img.height))
+
+	for y := 0; y < img.height; y++ {
+		for x := 0; x < img.width; x++ {
+			canvas.Set(x, y, img.image.At(x, y))
+		}
+	}
+
+	gray := GoImg{
+		image:  canvas,
+		path:   img.path,
+		height: img.height,
+		width:  img.width,
+	}
+
+	return gray
 }
